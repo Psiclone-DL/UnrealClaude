@@ -15,6 +15,27 @@ When working with Unreal Editor content, ALWAYS prefer MCP tools over filesystem
 - Use `blueprint_query` instead of reading .uasset files to inspect blueprints
 - MCP tools operate on the live editor state — filesystem tools see serialized data
 
+### Tool Router (MANDATORY)
+
+Domain-specific operations MUST go through the `unreal_ue` router tool. NEVER call these tools directly:
+- `blueprint_modify` → use `unreal_ue` with `domain: "blueprint"`
+- `anim_blueprint_modify` → use `unreal_ue` with `domain: "anim"`
+- `character` / `character_data` → use `unreal_ue` with `domain: "character"`
+- `enhanced_input` → use `unreal_ue` with `domain: "enhanced_input"`
+- `material` → use `unreal_ue` with `domain: "material"`
+- `asset` (create/import/export) → use `unreal_ue` with `domain: "asset"`
+
+Simple tools are called directly with `unreal_` prefix: `unreal_spawn_actor`, `unreal_move_actor`, `unreal_get_level_actors`, `unreal_asset_search`, `unreal_blueprint_query`, etc.
+
+**Router call format:**
+```json
+{
+  "domain": "blueprint",
+  "operation": "add_variable",
+  "params": { "blueprint_path": "/Game/BP_Example", "var_name": "Health", "var_type": "float" }
+}
+```
+
 ### Parallel Tool Execution
 
 When performing complex Unreal tasks, use parallel MCP tool calls and subagents to maximize throughput.
@@ -123,267 +144,12 @@ cd Resources/mcp-bridge && npm install
 - **Private/** folder for implementation files
 - **Public/** folder for headers meant for external use
 
-### Header File Template
-```cpp
-// Copyright Natali Caggiano. All Rights Reserved.
+### UE 5.7 C++ Reference
 
-#pragma once
-
-#include "CoreMinimal.h"
-#include "YourClass.generated.h"  // For UObject-derived classes
-
-/**
- * Brief description of the class purpose.
- *
- * Detailed description if needed.
- */
-UCLASS()
-class MODULENAME_API UYourClass : public UObject
-{
-    GENERATED_BODY()
-
-public:
-    // Public interface
-
-protected:
-    // Protected members
-
-private:
-    // Private implementation
-};
-```
-
-### UPROPERTY Specifiers (UE 5.7)
-```cpp
-// Editor-visible and Blueprint-accessible
-UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Category")
-int32 EditableProperty;
-
-// Read-only in Blueprint
-UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Runtime")
-bool bRuntimeValue;
-
-// Class defaults only (not per-instance)
-UPROPERTY(EditDefaultsOnly, Category = "Config")
-TSubclassOf<AActor> ActorClass;
-
-// Instance-only editing
-UPROPERTY(EditInstanceOnly, Category = "Level")
-AActor* TargetActor;
-
-// Replicated property
-UPROPERTY(ReplicatedUsing = OnRep_Value)
-float ReplicatedValue;
-
-// Transient (not serialized)
-UPROPERTY(Transient)
-float CachedValue;
-
-// With metadata constraints
-UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", ClampMax = "100.0"))
-float Percentage;
-
-// Asset references (UE 5.x preferred)
-UPROPERTY(EditAnywhere)
-TObjectPtr<UTexture2D> Texture;  // Hard reference
-
-UPROPERTY(EditAnywhere)
-TSoftObjectPtr<UStaticMesh> MeshAsset;  // Soft reference
-```
-
-### UFUNCTION Specifiers (UE 5.7)
-```cpp
-// Blueprint callable (has execution pins)
-UFUNCTION(BlueprintCallable, Category = "MyCategory")
-void DoSomething();
-
-// Blueprint pure (no execution pins, no side effects)
-UFUNCTION(BlueprintPure, Category = "MyCategory")
-int32 GetValue() const;
-
-// Blueprint implementable event
-UFUNCTION(BlueprintImplementableEvent, Category = "Events")
-void OnSomethingHappened();
-
-// Blueprint native event (C++ default, BP override)
-UFUNCTION(BlueprintNativeEvent, Category = "Events")
-void OnEvent();
-void OnEvent_Implementation();
-
-// Editor callable (for debugging)
-UFUNCTION(CallInEditor, BlueprintCallable)
-void DebugFunction();
-
-// With return display name
-UFUNCTION(BlueprintCallable, meta = (ReturnDisplayName = "Success"))
-bool TryDoSomething();
-```
-
-### Blueprint Function Library (UE 5.7)
-```cpp
-#pragma once
-
-#include "CoreMinimal.h"
-#include "Kismet/BlueprintFunctionLibrary.h"
-#include "MyFunctionLibrary.generated.h"
-
-UCLASS()
-class UMyFunctionLibrary : public UBlueprintFunctionLibrary
-{
-    GENERATED_BODY()
-
-public:
-    // Pure static function
-    UFUNCTION(BlueprintPure, Category = "Utility")
-    static float CalculateDistance(const FVector& A, const FVector& B);
-
-    // Callable static function with world context
-    UFUNCTION(BlueprintCallable, Category = "Spawning",
-        meta = (WorldContext = "WorldContextObject"))
-    static AActor* SpawnActorSafe(UObject* WorldContextObject,
-        TSubclassOf<AActor> ActorClass, FTransform SpawnTransform);
-};
-```
-
----
-
-## Animation Blueprint API (UE 5.7)
-
-### State Machine Bindings (UAnimInstance)
-```cpp
-// Callback signature for state entry/exit
-// void Callback(const FAnimNode_StateMachine& Machine, int32 PrevStateIndex, int32 NextStateIndex)
-
-void UMyAnimInstance::NativeInitializeAnimation()
-{
-    Super::NativeInitializeAnimation();
-
-    // Bind to state entry
-    AddNativeStateEntryBinding(
-        FName("Locomotion"),      // State machine name
-        FName("Idle"),            // State name
-        FOnGraphStateChanged::CreateUObject(this, &UMyAnimInstance::OnEnterIdle)
-    );
-
-    // Bind to state exit
-    AddNativeStateExitBinding(
-        FName("Locomotion"),
-        FName("Running"),
-        FOnGraphStateChanged::CreateUObject(this, &UMyAnimInstance::OnExitRunning)
-    );
-}
-
-// Callback implementation - must match FOnGraphStateChanged signature
-void UMyAnimInstance::OnEnterIdle(const FAnimNode_StateMachine& Machine, int32 PrevStateIndex, int32 NextStateIndex)
-{
-    UE_LOG(LogTemp, Log, TEXT("Entered Idle from state %d"), PrevStateIndex);
-}
-
-void UMyAnimInstance::OnExitRunning(const FAnimNode_StateMachine& Machine, int32 PrevStateIndex, int32 NextStateIndex)
-{
-    UE_LOG(LogTemp, Log, TEXT("Exited Running to state %d"), NextStateIndex);
-}
-```
-
-### Animation Time Remaining (UAnimInstance methods)
-```cpp
-// These are methods on UAnimInstance, called from within state machine context
-
-// Get remaining animation time in seconds (for transition rules)
-float TimeRemaining = GetRelevantAnimTimeRemaining();
-
-// Get remaining time as fraction (0.0 - 1.0)
-float TimeFraction = GetRelevantAnimTimeRemainingFraction();
-
-// Common transition pattern: transition when <10% remaining
-// In transition rule graph: GetRelevantAnimTimeRemainingFraction <= 0.1
-```
-
-### Blueprint Thread-Safe Animation Update
-```cpp
-// For performance (Fast Path), use thread-safe update
-void UMyAnimInstance::BlueprintThreadSafeUpdateAnimation(float DeltaTime)
-{
-    // Safe to call GetRelevantAnimTimeRemaining here
-    float TimeLeft = GetRelevantAnimTimeRemaining();
-
-    // Update animation properties
-    Speed = GetOwningActor()->GetVelocity().Size();
-}
-```
-
-### State Machine Graph Operations (Editor/MCP context)
-```cpp
-// For MCP tool development - programmatic state machine manipulation
-// See AnimationBlueprintUtils.h for full API
-
-// Create state machine
-UAnimGraphNode_StateMachine* SM = FAnimationBlueprintUtils::CreateStateMachine(
-    AnimBP, TEXT("Locomotion"), FVector2D(0, 0), OutNodeId, OutError);
-
-// Add states
-UAnimStateNode* IdleState = FAnimationBlueprintUtils::AddState(
-    AnimBP, TEXT("Locomotion"), TEXT("Idle"), FVector2D(200, 0), true, OutNodeId, OutError);
-
-// Create transitions
-UAnimStateTransitionNode* Trans = FAnimationBlueprintUtils::CreateTransition(
-    AnimBP, TEXT("Locomotion"), TEXT("Idle"), TEXT("Walk"), OutNodeId, OutError);
-
-// Set state animation
-FAnimationBlueprintUtils::SetStateAnimSequence(
-    AnimBP, TEXT("Locomotion"), TEXT("Idle"), TEXT("/Game/Animations/Idle_Anim"), OutError);
-```
-
----
-
-## Editor Plugin Development (UE 5.7)
-
-### Slate Widget Patterns
-```cpp
-// Creating widgets with SNew
-TSharedRef<SWidget> CreateWidget()
-{
-    return SNew(SVerticalBox)
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(4.0f)
-        [
-            SNew(STextBlock)
-            .Text(FText::FromString(TEXT("Hello")))
-        ]
-        + SVerticalBox::Slot()
-        .FillHeight(1.0f)
-        [
-            SNew(SButton)
-            .OnClicked(this, &SMyWidget::OnButtonClicked)
-            [
-                SNew(STextBlock)
-                .Text(FText::FromString(TEXT("Click Me")))
-            ]
-        ];
-}
-
-// Assigning to member variable with SAssignNew
-TSharedPtr<SEditableTextBox> TextBox;
-SAssignNew(TextBox, SEditableTextBox)
-    .HintText(FText::FromString(TEXT("Enter text...")));
-```
-
-### Editor Subsystem Pattern
-```cpp
-UCLASS()
-class UMyEditorSubsystem : public UEditorSubsystem
-{
-    GENERATED_BODY()
-
-public:
-    virtual void Initialize(FSubsystemCollectionBase& Collection) override;
-    virtual void Deinitialize() override;
-
-    UFUNCTION(BlueprintCallable, Category = "MySubsystem")
-    void DoEditorThing();
-};
-```
+For UPROPERTY/UFUNCTION specifiers, animation API, Slate patterns, and common UE patterns:
+- Use `unreal_get_ue_context` with relevant category (animation, blueprint, slate, etc.)
+- Use the engine source at `C:/Users/Natal/Github/UnrealEngine/Engine/Source/` for API verification
+- Copyright header: `// Copyright Natali Caggiano. All Rights Reserved.`
 
 ---
 
@@ -590,67 +356,6 @@ bool FMyTest::RunTest(const FString& Parameters)
 - Trust user input without sanitization
 
 ---
-
-## Common UE 5.7 Patterns
-
-### Safe Actor Iteration
-```cpp
-for (TActorIterator<AActor> It(GetWorld()); It; ++It)
-{
-    AActor* Actor = *It;
-    if (IsValid(Actor))
-    {
-        // Process actor
-    }
-}
-```
-
-### Deferred Spawning
-```cpp
-AActor* Actor = GetWorld()->SpawnActorDeferred<AMyActor>(
-    AMyActor::StaticClass(),
-    SpawnTransform,
-    nullptr,
-    nullptr,
-    ESpawnActorCollisionHandlingMethod::AlwaysSpawn
-);
-
-if (Actor)
-{
-    // Configure actor before it begins play
-    Actor->SomeProperty = Value;
-    Actor->FinishSpawning(SpawnTransform);
-}
-```
-
-### Asset Loading (UE 5.7)
-```cpp
-// Synchronous load (editor only, avoid in runtime)
-UBlueprint* BP = LoadObject<UBlueprint>(nullptr, *AssetPath);
-
-// Async load
-FStreamableManager& StreamableManager = UAssetManager::GetStreamableManager();
-StreamableManager.RequestAsyncLoad(AssetPath,
-    FStreamableDelegate::CreateUObject(this, &UMyClass::OnAssetLoaded));
-```
-
-### Property Iteration
-```cpp
-for (TFieldIterator<FProperty> PropIt(Object->GetClass()); PropIt; ++PropIt)
-{
-    FProperty* Property = *PropIt;
-    FString PropertyName = Property->GetName();
-
-    if (FNumericProperty* NumProp = CastField<FNumericProperty>(Property))
-    {
-        // Handle numeric property
-    }
-    else if (FStructProperty* StructProp = CastField<FStructProperty>(Property))
-    {
-        // Handle struct property
-    }
-}
-```
 
 ---
 
