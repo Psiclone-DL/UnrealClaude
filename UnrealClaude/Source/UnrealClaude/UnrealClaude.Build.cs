@@ -59,7 +59,9 @@ public class UnrealClaude : ModuleRules
 				// Asset saving
 				"EditorScriptingUtilities",
 				// Enhanced Input
-				"EnhancedInput"
+				"EnhancedInput",
+				// WebSockets — used by GameDataBridge Blueprint function library
+				"WebSockets"
 			}
 		);
 

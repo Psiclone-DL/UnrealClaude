@@ -51,9 +51,9 @@ When performing complex Unreal tasks, use parallel MCP tool calls and subagents 
 
 | Class | Tools | Rule |
 |-------|-------|------|
-| **Parallel-safe** (read-only) | asset_search, get_level_actors, blueprint_query, asset_dependencies, asset_referencers, capture_viewport, get_output_log | Call freely in parallel. No conflicts. |
-| **Per-object safe** (modifying) | spawn_actor, move_actor, set_property, blueprint_modify, material, character, character_data, asset, enhanced_input, anim_blueprint_modify | Parallelize on DIFFERENT actors/assets. Never modify same object from two calls. |
-| **Sequential only** | open_level, delete_actors, execute_script, cleanup_scripts, run_console_command | Must run alone. open_level invalidates all refs. |
+| **Parallel-safe** (read-only) | asset_search, get_level_actors, blueprint_query, asset_dependencies, asset_referencers, capture_viewport, get_output_log, task_status, task_list | Call freely in parallel. No conflicts. |
+| **Per-object safe** (modifying) | spawn_actor, move_actor, set_property, blueprint_modify, material, character, character_data, asset, enhanced_input, anim_blueprint_modify, task_submit | Parallelize on DIFFERENT actors/assets. Never modify same object from two calls. |
+| **Sequential only** | open_level, delete_actors, execute_script, cleanup_scripts, run_console_command, task_cancel | Must run alone. open_level invalidates all refs. |
 
 **When to use subagents (Task tool):**
 - Request maps to 3+ independent operations on different objects
@@ -86,8 +86,14 @@ For detailed workflow patterns: `unreal_get_ue_context` with query "parallel wor
 # Build plugin (from project root UnrealClaude/)
 "C:/Program Files/Epic Games/UE_5.7/Engine/Build/BatchFiles/RunUAT.bat" BuildPlugin -Plugin="C:/Users/Natal/OneDrive/Documents/Github/UnrealClaude/UnrealClaude/UnrealClaude.uplugin" -Package="C:/Users/Natal/OneDrive/Documents/Github/UnrealClaude/PluginBuild" -TargetPlatforms=Win64 -Rocket
 
-# Run tests (in Unreal Editor console)
+# Run C++ automation tests (in Unreal Editor console)
 Automation RunTests UnrealClaude
+
+# Run MCP bridge tests (uses vitest)
+cd Resources/mcp-bridge && npm test
+
+# Run a single bridge test file
+cd Resources/mcp-bridge && npx vitest run tests/unit/specific.test.js
 ```
 
 ### Build Directories
@@ -220,7 +226,8 @@ Resources/mcp-bridge/contexts/
 ├── material.md             # Material instances, parameters, assignment
 ├── parallel_workflows.md   # Parallel tool execution, subagent patterns
 ├── replication.md          # Network replication, RPCs, DOREPLIFETIME
-└── slate.md                # Slate UI widgets, SNew/SAssignNew patterns
+├── slate.md                # Slate UI widgets, SNew/SAssignNew patterns
+└── ue-core-api.md          # Core UE types, UObject, UPROPERTY/UFUNCTION specifiers
 ```
 
 ### Maintaining Context Files
