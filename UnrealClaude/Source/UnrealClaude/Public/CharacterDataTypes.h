@@ -105,45 +105,55 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Visuals")
 	TSoftClassPtr<UAnimInstance> AnimBlueprintClass;
 
-	/** Base movement stats */
+	/** Walking speed in cm/s */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
 	float BaseWalkSpeed = 600.0f;
 
+	/** Running/sprint speed in cm/s */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
 	float BaseRunSpeed = 1000.0f;
 
+	/** Jump Z velocity in cm/s */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
 	float BaseJumpVelocity = 420.0f;
 
+	/** Max acceleration magnitude in cm/s² */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
 	float BaseAcceleration = 2048.0f;
 
+	/** Ground friction coefficient (higher = stops faster) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
 	float BaseGroundFriction = 8.0f;
 
+	/** Air control factor (0 = no control, 1 = full control while airborne) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
 	float BaseAirControl = 0.35f;
 
+	/** Gravity scale multiplier (1.0 = normal gravity) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
 	float BaseGravityScale = 1.0f;
 
-	/** Base combat stats */
+	/** Starting health points */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
 	float BaseHealth = 100.0f;
 
+	/** Starting stamina points */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
 	float BaseStamina = 100.0f;
 
+	/** Base damage dealt per hit before multipliers */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
 	float BaseDamage = 10.0f;
 
+	/** Flat damage reduction applied before damage multipliers */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
 	float BaseDefense = 0.0f;
 
-	/** Capsule collision settings */
+	/** Capsule collision radius in cm */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Collision")
 	float CapsuleRadius = 42.0f;
 
+	/** Capsule collision half-height in cm (total height = 2 × this value) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Collision")
 	float CapsuleHalfHeight = 96.0f;
 
@@ -163,7 +173,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Type")
 	bool bIsPlayerCharacter = false;
 
-	/** Get the stats row from the referenced table if available */
+	/**
+	 * Look up a stats row from the referenced DataTable.
+	 * Falls back to DefaultStatsRowName when RowName is None.
+	 * Returns a default-constructed row if the table is unset or the row is not found.
+	 *
+	 * @param RowName  Name of the row to fetch. Pass NAME_None to use DefaultStatsRowName.
+	 * @return The matching FCharacterStatsRow, or a zeroed default if not found.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Character Config")
 	FCharacterStatsRow GetStatsRow(FName RowName = NAME_None) const
 	{

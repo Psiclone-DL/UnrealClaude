@@ -358,21 +358,21 @@ FScriptExecutionResult FScriptExecutionManager::ExecutePython(
 	UE_LOG(LogUnrealClaude, Log, TEXT("Python script actor delta: %d before, %d after (%+d)"),
 		ActorCountBefore, ActorCountAfter, ActorsCreated);
 
-	// Detect Python errors in output (check both exec and log output)
-	bool bHasError = Output.Contains(TEXT("Traceback")) ||
-	                 Output.Contains(TEXT("Error:")) ||
-	                 Output.Contains(TEXT("SyntaxError")) ||
-	                 Output.Contains(TEXT("NameError")) ||
-	                 Output.Contains(TEXT("TypeError")) ||
-	                 Output.Contains(TEXT("ValueError")) ||
-	                 Output.Contains(TEXT("ImportError")) ||
-	                 Output.Contains(TEXT("AttributeError")) ||
-	                 Output.Contains(TEXT("RuntimeError")) ||
-	                 Output.Contains(TEXT("Exception:")) ||
-	                 Output.Contains(TEXT("ModuleNotFoundError")) ||
-	                 Output.Contains(TEXT("FileNotFoundError")) ||
-	                 Output.Contains(TEXT("IndentationError")) ||
-	                 Output.Contains(TEXT("KeyError"));
+	// Detect Python errors in output (check both exec and log output).
+	// Use line-anchored checks for patterns that can appear in normal output (e.g. "Error:").
+	bool bHasError = Output.Contains(TEXT("Traceback (most recent call last)")) ||
+	                 Output.Contains(TEXT("SyntaxError:")) ||
+	                 Output.Contains(TEXT("NameError:")) ||
+	                 Output.Contains(TEXT("TypeError:")) ||
+	                 Output.Contains(TEXT("ValueError:")) ||
+	                 Output.Contains(TEXT("ImportError:")) ||
+	                 Output.Contains(TEXT("AttributeError:")) ||
+	                 Output.Contains(TEXT("RuntimeError:")) ||
+	                 Output.Contains(TEXT("ModuleNotFoundError:")) ||
+	                 Output.Contains(TEXT("FileNotFoundError:")) ||
+	                 Output.Contains(TEXT("IndentationError:")) ||
+	                 Output.Contains(TEXT("KeyError:")) ||
+	                 Output.Contains(TEXT("Exception:"));
 
 	// Build result message with actor count info
 	FString ResultMessage;
@@ -390,10 +390,6 @@ FScriptExecutionResult FScriptExecutionManager::ExecutePython(
 	if (ActorsCreated > 0)
 	{
 		FullOutput += FString::Printf(TEXT("\n[%d new actors added to level]"), ActorsCreated);
-	}
-	else if (!bHasError)
-	{
-		FullOutput += TEXT("\n[WARNING: Script reported success but no new actors were created in the level. The script may have failed silently.]");
 	}
 
 	// Add to history
