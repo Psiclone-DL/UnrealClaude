@@ -6,6 +6,29 @@ This file provides guidance to Claude Code when working with the UnrealClaude pl
 
 **UnrealClaude** is an Unreal Engine 5.7 plugin that provides MCP (Model Context Protocol) integration, enabling Claude AI to interact directly with the Unreal Editor via REST API tools.
 
+### Script Feedback Loop (MANDATORY for all scripting tasks)
+
+When a user's request requires executing a Python or Editor Utility script in UE5, you MUST follow this loop — never execute a script and stop without checking for errors:
+
+```
+User prompt
+  └── Determine if scripting is needed
+        └── YES → Write script
+                    └── Call unreal_run_script(script, script_type)
+                          ├── suggestion = "done"          → Report success to user. STOP.
+                          └── suggestion = "fix_and_retry" → Read errors[]
+                                                               Fix the script based on errors
+                                                               Call unreal_run_script again
+                                                               (repeat until done or 5 iterations)
+```
+
+**Rules:**
+- ALWAYS use `unreal_run_script` instead of calling `execute_script` + `get_output_log` manually
+- If `suggestion = "fix_and_retry"`, you MUST fix and retry — do not report partial failure to the user
+- After 5 failed iterations, report what errors remain and ask the user for guidance
+- `errors[]` in the result contains the exact log lines to diagnose — read them carefully before fixing
+- Never tell the user "I ran the script" without confirming `suggestion = "done"`
+
 ### MCP Tool Priority
 
 When working with Unreal Editor content, ALWAYS prefer MCP tools over filesystem tools:
