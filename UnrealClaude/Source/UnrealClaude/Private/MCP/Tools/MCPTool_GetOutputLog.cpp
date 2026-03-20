@@ -1,6 +1,7 @@
 // Copyright Natali Caggiano. All Rights Reserved.
 
 #include "MCPTool_GetOutputLog.h"
+#include "LogCapture.h"
 #include "UnrealClaudeModule.h"
 #include "UnrealClaudeConstants.h"
 #include "Misc/Paths.h"
@@ -9,7 +10,6 @@
 
 FMCPToolResult FMCPTool_GetOutputLog::Execute(const TSharedRef<FJsonObject>& Params)
 {
-	// Get parameters using centralized constants
 	int32 NumLines = UnrealClaudeConstants::MCPServer::DefaultOutputLogLines;
 	if (Params->HasField(TEXT("lines")))
 	{
@@ -19,95 +19,88 @@ FMCPToolResult FMCPTool_GetOutputLog::Execute(const TSharedRef<FJsonObject>& Par
 	FString Filter;
 	Params->TryGetStringField(TEXT("filter"), Filter);
 
-	// Resolve all candidate paths to absolute paths for reliable Windows file access
-	FString ProjectLogDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectLogDir());
-	FString EngineLogDir = FPaths::ConvertRelativePathToFull(FPaths::EngineDir() / TEXT("Saved/Logs"));
+	// --- PRIMARY PATH: in-memory live capture (always up-to-date, no disk flush needed) ---
+	FLogCapture& Capture = FLogCapture::Get();
+	if (Capture.IsCapturing() && Capture.GetTotalLineCount() > 0)
+	{
+		TArray<FString> Lines = Capture.GetRecentLines(NumLines, Filter);
+		FString LogOutput = FString::Join(Lines, TEXT("\n"));
 
-	// Search for the log file across multiple candidate locations
+		TSharedPtr<FJsonObject> ResultData = MakeShared<FJsonObject>();
+		ResultData->SetStringField(TEXT("source"), TEXT("live_memory"));
+		ResultData->SetNumberField(TEXT("total_captured"), Capture.GetTotalLineCount());
+		ResultData->SetNumberField(TEXT("returned_lines"), Lines.Num());
+		if (!Filter.IsEmpty())
+		{
+			ResultData->SetStringField(TEXT("filter"), Filter);
+		}
+		ResultData->SetStringField(TEXT("content"), LogOutput);
+
+		return FMCPToolResult::Success(
+			FString::Printf(TEXT("Retrieved %d live log lines (source: in-memory)"), Lines.Num()),
+			ResultData
+		);
+	}
+
+	// --- FALLBACK: disk log file (used if capture hasn't started yet) ---
+	UE_LOG(LogUnrealClaude, Warning, TEXT("LogCapture not active — falling back to disk log"));
+
+	FString ProjectLogDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectLogDir());
+	FString EngineLogDir  = FPaths::ConvertRelativePathToFull(FPaths::EngineDir() / TEXT("Saved/Logs"));
+
 	FString LogFilePath;
 	bool bFound = false;
 	TArray<FString> SearchedPaths;
 
-	// 1. Project-named log in project log directory
+	auto TryPath = [&](const FString& Candidate) -> bool
 	{
-		FString Candidate = ProjectLogDir / FApp::GetProjectName() + TEXT(".log");
 		SearchedPaths.Add(Candidate);
 		if (FPaths::FileExists(Candidate))
 		{
 			LogFilePath = Candidate;
-			bFound = true;
+			return true;
 		}
-	}
+		return false;
+	};
 
-	// 2. UnrealEditor.log in project log directory
-	if (!bFound)
-	{
-		FString Candidate = ProjectLogDir / TEXT("UnrealEditor.log");
-		SearchedPaths.Add(Candidate);
-		if (FPaths::FileExists(Candidate))
-		{
-			LogFilePath = Candidate;
-			bFound = true;
-		}
-	}
+	bFound = TryPath(ProjectLogDir / FApp::GetProjectName() + TEXT(".log"))
+		  || TryPath(ProjectLogDir / TEXT("UnrealEditor.log"));
 
-	// 3. Any .log file in project log directory
 	if (!bFound)
 	{
 		TArray<FString> LogFiles;
 		IFileManager::Get().FindFiles(LogFiles, *ProjectLogDir, TEXT("*.log"));
-		if (LogFiles.Num() > 0)
-		{
-			LogFilePath = ProjectLogDir / LogFiles[0];
-			bFound = true;
-		}
+		if (LogFiles.Num() > 0) { LogFilePath = ProjectLogDir / LogFiles[0]; bFound = true; }
 	}
 
-	// 4. UnrealEditor.log in engine saved logs
 	if (!bFound)
 	{
-		FString Candidate = EngineLogDir / TEXT("UnrealEditor.log");
-		SearchedPaths.Add(Candidate);
-		if (FPaths::FileExists(Candidate))
-		{
-			LogFilePath = Candidate;
-			bFound = true;
-		}
+		bFound = TryPath(EngineLogDir / TEXT("UnrealEditor.log"));
 	}
 
-	// 5. Any .log file in engine saved logs
 	if (!bFound)
 	{
 		TArray<FString> LogFiles;
 		IFileManager::Get().FindFiles(LogFiles, *EngineLogDir, TEXT("*.log"));
-		if (LogFiles.Num() > 0)
-		{
-			LogFilePath = EngineLogDir / LogFiles[0];
-			bFound = true;
-		}
+		if (LogFiles.Num() > 0) { LogFilePath = EngineLogDir / LogFiles[0]; bFound = true; }
 	}
 
 	if (!bFound)
 	{
-		FString AllPaths = FString::Join(SearchedPaths, TEXT(", "));
 		return FMCPToolResult::Error(
-			FString::Printf(TEXT("No log file found. Searched paths: %s. Also scanned directories: %s, %s"),
-				*AllPaths, *ProjectLogDir, *EngineLogDir));
+			FString::Printf(TEXT("LogCapture not active and no log file found. Searched: %s"),
+				*FString::Join(SearchedPaths, TEXT(", "))));
 	}
 
-	// Read the log file with FILEREAD_AllowWrite so we can read while the editor writes to it.
-	// Without this flag, Windows file sharing semantics prevent reading the active log.
 	FString LogContent;
 	if (!FFileHelper::LoadFileToString(LogContent, *LogFilePath, FFileHelper::EHashOptions::None, FILEREAD_AllowWrite))
 	{
 		return FMCPToolResult::Error(FString::Printf(TEXT("Failed to read log file: %s"), *LogFilePath));
 	}
 
-	// Split into lines
 	TArray<FString> AllLines;
 	LogContent.ParseIntoArrayLines(AllLines);
 
-	// Filter lines if a filter is specified
 	TArray<FString> FilteredLines;
 	if (Filter.IsEmpty())
 	{
@@ -124,18 +117,12 @@ FMCPToolResult FMCPTool_GetOutputLog::Execute(const TSharedRef<FJsonObject>& Par
 		}
 	}
 
-	// Get the last N lines
-	int32 StartIndex = FMath::Max(0, FilteredLines.Num() - NumLines);
-	TArray<FString> ResultLines;
-	for (int32 i = StartIndex; i < FilteredLines.Num(); ++i)
-	{
-		ResultLines.Add(FilteredLines[i]);
-	}
-
-	// Build result
+	const int32 StartIndex = FMath::Max(0, FilteredLines.Num() - NumLines);
+	TArray<FString> ResultLines(FilteredLines.GetData() + StartIndex, FilteredLines.Num() - StartIndex);
 	FString LogOutput = FString::Join(ResultLines, TEXT("\n"));
 
 	TSharedPtr<FJsonObject> ResultData = MakeShared<FJsonObject>();
+	ResultData->SetStringField(TEXT("source"), TEXT("disk_fallback"));
 	ResultData->SetStringField(TEXT("log_file"), LogFilePath);
 	ResultData->SetNumberField(TEXT("total_lines"), AllLines.Num());
 	ResultData->SetNumberField(TEXT("returned_lines"), ResultLines.Num());
@@ -147,7 +134,7 @@ FMCPToolResult FMCPTool_GetOutputLog::Execute(const TSharedRef<FJsonObject>& Par
 	ResultData->SetStringField(TEXT("content"), LogOutput);
 
 	return FMCPToolResult::Success(
-		FString::Printf(TEXT("Retrieved %d log lines from %s"), ResultLines.Num(), *FPaths::GetCleanFilename(LogFilePath)),
+		FString::Printf(TEXT("Retrieved %d log lines from disk (live capture not active)"), ResultLines.Num()),
 		ResultData
 	);
 }

@@ -8,6 +8,7 @@
 #include "ScriptExecutionManager.h"
 #include "MCP/UnrealClaudeMCPServer.h"
 #include "ProjectContext.h"
+#include "LogCapture.h"
 
 #include "Framework/Docking/TabManager.h"
 #include "Framework/Notifications/NotificationManager.h"
@@ -30,7 +31,10 @@ static const FName ClaudeTabName("ClaudeAssistant");
 void FUnrealClaudeModule::StartupModule()
 {
 	UE_LOG(LogUnrealClaude, Warning, TEXT("=== UnrealClaude BUILD 20260107-1450 THREAD_TESTS_DISABLED ==="));
-	
+
+	// Start in-memory log capture immediately — before anything else so we don't miss early log lines
+	FLogCapture::Get().StartCapturing();
+
 	// Register commands
 	FUnrealClaudeCommands::Register();
 	
@@ -169,6 +173,9 @@ void FUnrealClaudeModule::StartupModule()
 void FUnrealClaudeModule::ShutdownModule()
 {
 	UE_LOG(LogUnrealClaude, Log, TEXT("UnrealClaude module shutting down"));
+
+	// Stop log capture before anything else
+	FLogCapture::Get().StopCapturing();
 
 	// Stop MCP Server
 	StopMCPServer();
